@@ -1,0 +1,54 @@
+ULIB = ../../lib/lib2-64
+PUBLIC = ../../lib/public
+WORDSEG = ../../lib/wordseg
+POSTAG = ../../lib/postag
+
+INCLUDEDIR = -I./ \
+			 -I$(WORDSEG) \
+			 -I$(PUBLIC)/odict \
+			 -I$(ULIB)/libcrf/include \
+			 -I$(ULIB)/dict/include \
+			 -I$(ULIB)/others-ex/include \
+			 -I$(ULIB)/ullib/include \
+			 -I$(ULIB)/ccode/include \
+			 -I$(POSTAG)/include
+
+LIBDIR = -L./ \
+		 -L$(WORDSEG) -lsegment \
+		 -L$(ULIB)/libcrf/lib -lcrf \
+		 -L$(PUBLIC)/odict -lodict \
+		 -L$(ULIB)/dict/lib -luldict \
+		 -L$(ULIB)/ullib/lib -lullib \
+		 -L$(ULIB)/others-ex/lib -lullib_ex \
+		 -L$(POSTAG)/lib -lpostag \
+		 -L$(ULIB)/ccode/lib -lulccode\
+		 -lcrypto -lpthread
+
+CFLAGS = -DLINUX -DDEBUG_OFF -D_REENTRANT -Wall -D_FILE_OFFSET_BITS=64 -g -pg
+
+SRC = demo.cpp
+OBJ = $(SRC:.cpp=.o)
+PROGRAM = demo
+
+CC = g++
+
+all: $(PROGRAM)
+
+# ERROR MARK:
+# 原来错误出现在这儿
+# OBJ需要依赖其他库，所以在链接的时候，其他库要写到 OBJ的后面
+#
+$(PROGRAM): $(OBJ)
+	$(CC) -o $(PROGRAM) $(OBJ) $(LIBDIR)
+
+.SUFFIXES : .cpp
+
+.cpp.o:
+	$(CC) $(INCLUDEDIR) $(CFLAGS) -c $<
+
+clean:
+	rm -rf *.o
+
+rebuild:
+	make clean
+	make all

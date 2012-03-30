@@ -1,0 +1,127 @@
+/**
+ * @file     segPos.cpp
+ * @brief    Chinese word segmentation and POS.
+ * @details  ...
+ * @author   yinxusen@baidu.com
+ * @date     2012-3-23
+ **/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "scwdef.h"
+#include "isegment.h"
+#include "ipostag.h"
+
+#define MAX_LINE_LEN 4096
+#define MAX_TERM_LEN 4096
+
+#define FAIL -1
+#define OK 0
+
+typedef char* path_t;
+
+extern char* get_pos_str(unsigned int nPOS);
+
+char* PROGNAME = "";
+
+void print_result(token_t tokens[], int count, FILE* pOuf) {
+	fprintf(pOuf, "\n");
+	for(int i=0; i<count; ++i) {
+		const char* stag = get_pos_str(tokens[i].type);
+		if(stag) {
+			fprintf(pOuf, "%s/%s\t",tokens[i].buffer, stag);
+		} else {
+			fprintf(pOuf, "%s\t",tokens[i].buffer);
+		}
+	}
+	fprintf(pOuf, "\n");
+}
+
+int segPos(path_t segDict, path_t posDict, path_t inf, path_t ouf) {
+	token_t tokens[MAX_TERM_LEN];
+	token_t subTokens[MAX_TERM_LEN];
+	char line[MAX_LINE_LEN] = {0};
+	dict_ptr_t pDict = seg_dict_open(segDict);
+	if(!pDict) {
+		fprintf(stderr, "\n%s: Load segment dict failed.\n", PROGNAME);
+		return FAIL;
+	}
+	if(tag_open(posDict)) {
+		fprintf(stderr, "\n%s: Load POS dict failed.\n", PROGNAME);
+		seg_dict_close(pDict);
+		return FAIL;
+	}
+	handle_t segHandle = seg_open(pDict, MAX_TERM_LEN);
+	if(!segHandle) {
+		fprintf(stderr, "\n%s: Cannot open handle for segment.\n", PROGNAME);
+		seg_dict_close(pDict);
+		tag_close();
+		return FAIL;
+	}
+	FILE *pInf, *pOuf;
+	pInf = fopen(inf, "r");
+	if(!pInf) {
+		fprintf(stderr, "\n%s: Cannot open input file.\n", PROGNAME);
+		seg_dict_close(pDict);
+		tag_close();
+		seg_close(segHandle);
+		return FAIL;
+	}
+	pOuf = fopen(ouf, "w");
+	if(!pOuf) {
+		fprintf(stderr, "\n%s: Cannot open output file.\n", PROGNAME);
+		seg_dict_close(pDict);
+		tag_close();
+		seg_close(segHandle);
+		fclose(pInf);
+		pInf = NULL;
+		return FAIL;
+	}
+	while(fgets(line, sizeof(line), pInf)) {
+		int len = strlen(line);
+		while(line[len-1]=='\r' || line[len-1]=='\n') {
+			line[--len] = 0;
+		}
+		if(!len) {
+			continue;
+		}
+		int count = seg_segment(segHandle, line, len, tokens, MAX_TERM_LEN);
+		if(!count) {
+			fprintf(stderr, "\n%s: error when segmenting, jump over:\n%s\n",PROGNAME,line);
+			continue;
+		}
+		int ret = tag_postag(tokens, count);
+		if(!ret) {
+			fprintf(stderr, "\n%s: error when pos tagging, jump over:\n%s\n",PROGNAME,line);
+			continue;
+		}
+		fprintf(pOuf, "\nBefore tokenization.\n");
+		print_result(tokens, count, pOuf);
+		int cnt = 0;
+		for(int i=0; i<count; ++i) {
+			cnt += seg_tokenize(segHandle, tokens[i], TOK_BASIC, subTokens +cnt, 32);
+		}
+		ret = tag_postag(subTokens, cnt);
+		if(!ret) {
+			fprintf(stderr, "\n%s: error when pos tagging, jump over:\n%s\n",PROGNAME,line);
+			continue;
+		}
+		fprintf(pOuf, "\nAfter tokenization.\n");
+		print_result(tokens, count, pOuf);
+	}
+	seg_close(segHandle);
+	tag_close();
+	seg_dict_close(pDict);
+	return OK;
+}
+
+int main(int argc, char** argv) {
+	PROGNAME = argv[0];
+	if(argc < 4) {
+		fprintf(stderr, "\nusage:\t%s segDictPath posDictPath inputFile outputFile\n",
+				PROGNAME);
+		exit(FAIL);
+	}
+	return segPos(argv[1], argv[2], argv[3], argv[4]);
+}

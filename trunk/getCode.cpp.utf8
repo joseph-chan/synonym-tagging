@@ -1,0 +1,68 @@
+/**
+ * @file     getCode.cpp
+ * @brief    Recognize the coding of a file.
+ * @details  ...
+ * @author   yinxusen@baidu.com
+ * @date     2012-3-23
+ **/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ul_ccode.h"
+
+#define FAIL -1
+#define OK 0
+#define MAX_FILE_LEN 409600
+typedef char* path_t;
+
+char* PROGNAME = "";
+
+int getCode(path_t dict, path_t inf) {
+	if(inf == NULL) {
+		fprintf(stderr, "\n%s: Input file name invalid.\n", PROGNAME);
+		return FAIL;
+	}
+	FILE* pInf = fopen(inf, "r");
+	if(pInf == NULL) {
+		fprintf(stderr, "\n%s: Open input file failed.\n", PROGNAME);
+		return FAIL;
+	}
+	char buf[MAX_FILE_LEN];
+	fread(buf, 1, MAX_FILE_LEN, pInf);
+	fclose(pInf);
+	if(0 != ul_ccode_load(dict)) {
+		fprintf(stderr, "\n%s: Load code dict failed.\n", PROGNAME);
+		return FAIL;
+	}
+	int codeType = ul_ccode_check(buf);
+	ul_ccode_del();
+	return codeType;
+}
+
+int main(int argc, char** argv) {
+	PROGNAME = argv[0];
+	if(argc < 3) {
+		fprintf(stderr, "\nusage:\t%s codeDictPath file\n", PROGNAME);
+		exit(FAIL);
+	}
+	int ret = getCode(argv[1], argv[2]);
+	switch(ret) {
+		case 0:
+			printf("ASCII\n");
+			break;
+		case 1:
+			printf("GBK\n");
+			break;
+		case 2:
+			printf("Big5\n");
+			break;
+		case 3:
+			printf("UTF8\n");
+			break;
+		default:
+			printf("Unknown\n");
+			break;
+	}
+	return ret;
+}

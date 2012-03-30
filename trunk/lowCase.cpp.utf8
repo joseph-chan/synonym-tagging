@@ -1,0 +1,70 @@
+/**
+ * @file     lowCase.cpp
+ * @brief    Transfer all uppercase to lowercase.
+ * @details  ...
+ * @author   yinxusen@baidu.com
+ * @date     2012-3-23
+ **/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ul_ccode.h"
+#include "ul_conf.h"
+#include "ul_dict.h"
+#include "ul_sign.h"
+
+#define MAX_LINE_LEN 4096
+
+#define FAIL -1
+#define OK 0
+
+typedef char* path_t;
+
+char* PROGNAME = "";
+int lowCase(path_t inf, path_t ouf) {
+	FILE *pInf, *pOuf;
+	if(inf == NULL || ouf == NULL || strcmp(inf, ouf) == 0) {
+		fprintf(stderr, "\n%s: Input file is NULL or output file is NULL, \
+				or input file name equals output file name, please check.\n", PROGNAME);
+		return FAIL;
+	}
+	if((pInf=fopen(inf,"r")) == NULL) {
+		fprintf(stderr, "\n%s: Open input file failed.\n", PROGNAME);
+		return FAIL;
+	}
+	if((pOuf=fopen(ouf,"w")) == NULL) {
+		fprintf(stderr, "\n%s: Open output file failed.\n", PROGNAME);
+		fclose(pOuf);
+		return FAIL;
+	}
+	/*
+	if(0 != ul_ccode_load(dict)) {
+		fclose(pInf);
+		fclose(pOuf);
+		fprintf(stderr, "\n%s: Load code dict failed.\n", PROGNAME);
+		return FAIL;
+	}
+	*/
+	char inBuf[MAX_LINE_LEN];
+	char ouBuf[MAX_LINE_LEN];
+	while(NULL!= fgets(inBuf, sizeof(inBuf),pInf)) {
+		ul_trans2lower(inBuf, ouBuf);
+		fputs(ouBuf, pOuf);
+	}
+	fclose(pInf);
+	pInf = NULL;
+	fclose(pOuf);
+	pOuf = NULL;
+//	ul_ccode_del();
+	return OK;
+}
+
+int main(int argc, char** argv) {
+	PROGNAME = argv[0];
+	if(argc < 3) {
+		fprintf(stderr, "\nusage:\t%s inputFile outputFile\n", PROGNAME);
+		exit(FAIL);
+	}
+	return lowCase(argv[1], argv[2]);
+}

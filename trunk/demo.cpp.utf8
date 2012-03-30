@@ -1,0 +1,563 @@
+/*
+ * DEMO: 1. Load dictionary using ul_conf.h
+ *       2. GB coding change and so on
+ *       3. Create a new dictionary
+ *       4. Log output, Top 100 terms.
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "ul_ccode.h"
+#include "ul_conf.h"
+#include "scwdef.h"
+#include "isegment.h"
+#include "ipostag.h"
+#include "ul_dict.h"
+#include "ul_sign.h"
+#include "ul_log.h"
+#include "ul_thr.h"
+
+#define MAX_CONF 1024
+#define MAX_FILE 1024	// 全文读取，或者读到buf size用完的时候
+#define MAX_LINE 4096	// 按行读取，并处理，在内存小的时候比较好
+#define MAX_TERM 4096	// 
+
+#define	OK	0
+#define	FAIL	-1
+
+typedef char* path;
+
+extern int scw_get_token_1( scw_out_t* pout, int type, token_t result[], unsigned max);
+extern const char* get_pos_str(unsigned int nPOS);
+
+/**
+ * @brief 读取配置文件中词典路径
+ *
+ * @param [in] work_path   : 配置文件路径
+ * @param [in] file_name   : 配置文件名称
+ * @param [out] dict_path   : 词典路径数组
+ * @param [in] path_num    : 用户传入的数组大小
+ * @return  载入配置结果
+ * @retval  FAIL 载入失败 others 载入数量
+ * @author yinxusen
+ * @date 2012/3/8 16:01
+ **/
+int ReadConf(char* work_path, char* file_name, path* dict_path, int path_num)
+{
+	if((work_path == NULL) || (file_name == NULL) ||(dict_path == NULL))
+	{
+		return FAIL;
+	}
+	ul_confdata_t* conf = ul_initconf(MAX_CONF);
+	if(conf == NULL)
+	{
+		return FAIL;
+	}
+	if(ul_readconf(work_path, file_name, conf) == -1)
+	{
+		ul_freeconf(conf);
+		return FAIL;
+	}
+	int num = path_num > conf->num ? conf->num:path_num;
+	for(int i=0; i<num; ++i)
+	{
+		dict_path[i] = (char*)calloc(strlen(conf->item->value)+1, sizeof(char));
+		if(dict_path[i] == NULL)
+		{
+			continue;
+		}
+		strcpy(dict_path[i], conf->item->value);
+	}
+	ul_freeconf(conf);
+	return num;
+}
+
+/**
+ * @brief 获取文件中语言的编码方式
+ * @param [in] file_name    : 需要解析的文件名
+ * @return 文件内容的编码方式
+ * @retval -1 if failed else type number
+ * @author yinxusen
+ * @date 2012/3/8 16:44
+ **/
+int GetCode(char* file_name)
+{
+	if(file_name == NULL)
+	{
+		return FAIL;
+	}
+	FILE* fp = fopen(file_name, "r");
+	char inbuf[MAX_FILE];
+	fread(inbuf, 1, MAX_FILE, fp);
+	fclose(fp);
+	if(0 != ul_ccode_load("./"))
+	{
+		return FAIL;
+	}
+	int code_type = ul_ccode_check(inbuf);
+	ul_ccode_del();
+	return code_type;
+}
+
+/**
+ * @brief 文件内容转换成小写并输出
+ * @param [in] input_file   : 输入文件名
+ * @param [in] output_file  : 输出文件名
+ * @return OK if normal, fail otherwise
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/8 17:17
+ **/
+int LowerCaseTrans(char* input_file, char* output_file)
+{
+	FILE *in_fp, *out_fp;
+	if((input_file == NULL)||(output_file == NULL))
+	{
+		return FAIL;
+	}
+	if((in_fp = fopen(input_file, "r")) == NULL)
+	{
+		return FAIL;
+	}
+	if((out_fp = fopen(output_file, "w")) == NULL)
+	{
+		fclose(in_fp);
+		return FAIL;
+	}
+	if(0 != ul_ccode_load("./"))
+	{
+		fclose(in_fp);
+		fclose(out_fp);
+		return FAIL;
+	}
+	char in_buf[MAX_LINE];
+	char out_buf[MAX_LINE];
+	while(NULL != fgets(in_buf, MAX_LINE, in_fp))
+	{
+		ul_trans2lower(in_buf, out_buf);
+		fputs(out_buf, out_fp);
+	}
+	fclose(in_fp);
+	fclose(out_fp);
+	ul_ccode_del();
+	return OK;
+}
+
+
+/**
+ * @brief 文件内容转换成半角并输出
+ * @param [in] input_file   : 输入文件名
+ * @param [in] output_file  : 输出文件名
+ * @return OK if normal, fail otherwise
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/8 17:24
+ **/
+int SemiAngleTrans(char* input_file, char* output_file)
+{
+	FILE *in_fp, *out_fp;
+	if((input_file == NULL)||(output_file == NULL))
+	{
+		return FAIL;
+	}
+	if((in_fp = fopen(input_file, "r")) == NULL)
+	{
+		return FAIL;
+	}
+	if((out_fp = fopen(output_file, "w")) == NULL)
+	{
+		fclose(in_fp);
+		return FAIL;
+	}
+	if(0 != ul_ccode_load("./"))
+	{
+		fclose(in_fp);
+		fclose(out_fp);
+		return FAIL;
+	}
+	char in_buf[MAX_LINE];
+	char out_buf[MAX_LINE];
+	while(NULL != fgets(in_buf, MAX_LINE, in_fp))
+	{
+		ul_trans2bj(in_buf, out_buf);
+		fputs(out_buf, out_fp);
+	}
+	fclose(in_fp);
+	fclose(out_fp);
+	ul_ccode_del();
+	return OK;
+}
+
+/**
+ * @brief 切词结果输出
+ * @param [in] pout    : 切词产生的结果
+ * @param [in] line    : 当前切词行
+ * @return void
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/13 10:56
+ **/
+void scw_dump_out(scw_out_t* pout, char* line)
+{
+	int i;
+	token_t tokens[1024];
+
+	int count = scw_get_token_1(pout,SCW_OUT_WPCOMP,tokens,1024);
+	// view word phrase compond result
+	printf("============== Segment Result =============\n");
+	for( i=0; i<count; i++)
+	{
+		printf("%s(%d)  ", tokens[i].buffer, tokens[i].offset);
+	}
+	printf("\n");
+
+	count = scw_get_token_1(pout,SCW_OUT_BASIC,tokens,1024);
+	// view basic word sep result
+	printf("============== Basic Word Result =============\n");
+	for( i=0; i<count; i++)
+	{
+		printf("%s(%d)  ", tokens[i].buffer, tokens[i].offset);
+	}
+	printf("\n");
+
+	count = scw_get_token_1(pout,SCW_OUT_SUBPH,tokens,1024);
+	fprintf(stderr,"count of sub phrase = %d\n",count);
+	// view sub phrase result
+	printf("============== Sub Phrase Result =============\n");
+	for( i=0; i<count; i++)
+	{
+		printf("%s(%d)  ", tokens[i].buffer, tokens[i].offset);
+	}
+	printf("\n");
+
+	count = scw_get_token_1(pout,SCW_OUT_NEWWORD,tokens,1024);
+	// view new word result
+	printf("============== NEW Word Result =============\n");
+	for( i=0; i<count; i++)
+	{
+		printf("%s(%d)  ", tokens[i].buffer, tokens[i].offset);
+	}
+	printf("\n");
+	count = scw_get_token_1(pout,SCW_OUT_HUMANNAME,tokens,1024);
+	// view NER result
+	printf("============== Human Name Result =============\n");
+	for( i=0; i<count; i++)
+	{
+		printf("%s(%d)  ", tokens[i].buffer, tokens[i].offset);
+	}
+	printf("\n");
+
+	count = scw_get_token_1(pout,SCW_OUT_BOOKNAME,tokens,1024);
+	// view the book name result
+	printf("============== Book Name Result =============\n");
+	for( i=0; i<count; i++)
+	{
+	printf("%s(%d)  ", tokens[i].buffer, tokens[i].offset);
+	}
+	printf("\n");
+}
+
+/**
+ * @brief 文件中文分词
+ * @param [in] ful_path     : 载入字典路径
+ * @param [in] input_file   : 输入文件名
+ * @param [in] output_file  : 输出文件名
+ * @return OK if normal, fail otherwise
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/9 10:56
+ **/
+
+int WordSeg(char* ful_path, char* input_file, char* output_file)
+{
+	scw_worddict_t* pwdict = NULL;
+	scw_out_t* pout = NULL;
+	char line[1024000];
+	u_int scw_out_flag;
+	FILE *in_fp, *out_fp;
+	
+	scw_out_flag = SCW_OUT_ALL | SCW_OUT_PROP;
+
+	if((pwdict = scw_load_worddict(ful_path)) == NULL)
+	{
+		return FAIL;
+	}
+	if((pout=scw_create_out(10000, scw_out_flag))==NULL)
+	{
+		scw_destroy_worddict(pwdict);
+		return FAIL;
+	}
+	if((input_file == NULL)||(output_file == NULL))
+	{
+		scw_destroy_out(pout);
+		return FAIL;
+	}
+	if((in_fp = fopen(input_file, "r")) == NULL)
+	{
+		scw_destroy_out(pout);
+		scw_destroy_worddict(pwdict);
+		return FAIL;
+	}
+	if((out_fp = fopen(output_file, "w")) == NULL)
+	{
+		scw_destroy_out(pout);
+		fclose(in_fp);
+		scw_destroy_worddict(pwdict);
+		return FAIL;
+	}
+
+	while(fgets(line, sizeof(line), in_fp))
+	{
+		int len = strlen(line);
+		while( (line[len-1]=='\r') ||(line[len-1]=='\n') )
+			line[--len]=0;
+		if( !len )
+			continue;
+		scw_segment_words(pwdict, pout, line, len);
+		scw_dump_out(pout,line);
+	}
+	scw_destroy_out(pout);
+	pout = NULL;
+	scw_destroy_worddict(pwdict);
+	pwdict = NULL;
+	fclose(in_fp);
+	fclose(out_fp);
+	return OK;
+}
+
+/**
+ * @brief tokens output
+ * @param [in] tokens[]     : tokens
+ * @param [in] count        : number of tokens
+ * @return void
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/15 15:45
+ **/
+void print_result(token_t tokens[], int count)
+{
+	for(int i=0; i<count; i++)
+	{
+		const char* stag = get_pos_str(tokens[i].type);
+		if(stag)
+			printf("%s/%s	",tokens[i].buffer, stag);
+		else
+			printf("%s	",tokens[i].buffer);
+	}
+	printf("\n");
+}
+
+/**
+ * @brief 文件中文分词 POS
+ * @param [in] seg_dict     : load seg dict
+ * @param [in] pos_dict     : load POS dict
+ * @param [in] inf          : 输入文件名
+ * @param [in] ouf          : 输出文件名
+ * @return OK if normal, fail otherwise
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/15 12:07
+ **/
+int SegPos(char* seg_dict, char* pos_dict, char* inf, char* ouf)
+{
+	token_t tokens[MAX_TERM];
+	token_t subtokens[MAX_TERM];
+	char line[MAX_LINE] = {0};
+	dict_ptr_t dict_ptr = seg_dict_open(seg_dict);
+	tag_open(pos_dict);
+	handle_t seg_handle = seg_open(dict_ptr, MAX_TERM);
+	FILE* infp = fopen(inf, "r");
+	while(fgets(line, sizeof(line), infp))
+	{
+		int len = strlen(line);
+		while(line[len-1]=='\r' || line[len-1]=='\n')
+		{
+			line[--len]=0;
+		}
+		if(! len)
+			continue;
+		int count = seg_segment(seg_handle, line, len, tokens, MAX_TERM);
+		if(! count)
+		{
+			fprintf(stderr, "error when segmenting, jump over:\n%s\n",line);
+			continue;
+		}
+		int ret = tag_postag(tokens, count);
+		if(!ret)
+		{
+			fprintf(stderr, "error when pos tagging, jump over:\n%s\n",line);
+			continue;
+		}
+		printf("\n1\n");
+		print_result(tokens, count);
+
+		int cnt = 0;
+		for(int i=0; i<count; i++)
+		{
+			cnt += seg_tokenize(seg_handle, tokens[i], TOK_BASIC, subtokens +cnt, 32);
+		}
+		ret = tag_postag(subtokens, cnt);
+		if(! ret)
+		{
+			fprintf(stderr, "error when pos tagging, jump over:\n%s\n",line);
+			continue;
+		}
+		printf("\n2\n");
+		print_result(subtokens, cnt);
+	}
+	seg_close(seg_handle);
+	tag_close();
+	seg_dict_close(dict_ptr);
+	return OK;
+}
+/**
+ * @brief 创建词典
+ * @param [in] file_name    : 输入文件名
+ * @param [in] dict_size    : 指定的hash大小
+ * @param [in] out_path     : 输出路径
+ * @param [in] output_file  : 输出文件名
+ * @return OK if normal, fail otherwise
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/9 12:09
+ **/
+int CreateDict(char* input_file, int dict_size, char* out_path, char* output_file) {
+	char buffer[MAX_LINE];
+	unsigned sign1, sign2;
+	char* pbuff = NULL;
+	int lineCount = 0;
+	FILE* fp = NULL;
+	int ret = OK;
+	Sdict_build* wordDict = NULL;
+	
+	fp = fopen( input_file, "r");
+	if( fp == NULL ) {
+		ret = FAIL;
+		goto out;
+	}
+	
+	wordDict = db_creat ( dict_size, 0 );
+	if ( NULL == wordDict ) {
+		ret = FAIL;
+		goto out;
+	}
+	
+	while( fgets(buffer, MAX_LINE, fp ) != NULL ) {
+		lineCount++;
+		if( strlen(buffer) == 1 ) {
+			continue;
+		}
+		
+		pbuff = buffer + strlen (buffer) - 1;
+		
+		while( pbuff > buffer && (*pbuff == '\n' || *pbuff == '\r') ) {
+			*pbuff = 0;
+			pbuff--;
+		}
+		
+		printf("add word %s to word dict.\n", buffer);
+		//对字符串进行签名, ul_dict使用签名作为key
+		creat_sign_f64( buffer, strlen (buffer), &sign1, &sign2 );
+		Sdict_snode snode;
+		snode.sign1 = sign1;
+		snode.sign2 = sign2;
+		
+		snode.code = -1;
+		snode.other = 0;
+		//放入hash字典中
+		if (db_op1 (wordDict, &snode, ADD) == -1) {
+			fprintf(stderr, "add snode to ul_dict error");
+		}
+		
+	}
+	printf("create nomeandict finish!\n");
+
+	db_save(wordDict, out_path, output_file);
+
+	printf("save dict finish!\n");
+	
+	out:
+	if( fp ) {
+		fclose( fp );
+		fp = NULL;
+	}
+	return ret;
+}
+
+/**
+ * @brief 日志输出
+ * @param [in] file_name    : 切词后的结果
+ * @return OK if normal, fail otherwise
+ * @retval 
+ * @author yinxusen
+ * @date 2012/3/13 15:11
+ **/
+int LogOutput(char* file_name) {
+	ul_logstat_t log_stat = {16,0,0};
+	Ul_log_self log_self = {
+		{"self1", "self2"},
+		{1, 1},
+		2
+	};
+	int ret = ul_openlog("./log/", "ullogdemo", &log_stat, 2045, &log_self);
+	if (ret != 0) {
+		printf("[Fatal Error] open log in process MAIN fail!\n");
+		return FAIL;
+	}
+	int logId = 123456789;
+	// 统计 TOP 100
+	ul_writelog(UL_LOG_DEBUG, file_name, logId,__FILE__, __LINE__, (int)getpid(), (int)pthread_self());
+	return OK;
+}
+
+int main(void) {
+	//-----------------------------
+	// testing ul_conf
+	int conf_num = 3;  // We assume a number for testing.
+	int real_num = 0;
+	path* dict_path = (path*)calloc(conf_num,sizeof(path));
+	char* work_path = "./";
+	char* file_name = "config.in";
+	if((real_num = ReadConf(work_path, file_name, dict_path, conf_num)) != FAIL)
+	{
+		for(int i=0; i<real_num; ++i)
+		{
+			printf("%s", dict_path[i]);
+		}
+	}
+
+	//-----------------------------
+	// testing getcode
+	// char* copra_file = "/home/work/zhangweimeng/chs-syn.x";
+	// printf("\n The code is %d .", GetCode(copra_file));
+	//
+	//----------------------------
+
+	/*
+	// testing wordseg
+	char* fully_path = "../../lib/worddict/";
+	char* input_file = "a.txt";
+	char* output_file = "chs-syn.gb.modified";
+	if((WordSeg(fully_path, input_file, output_file))!=OK)
+	{
+		printf("WordSeg failed.\n");
+	}
+	*/
+
+	char* input_file = "chs-syn.gb";
+	char* output_file = "chs-syn.gb.modified";
+	char* seg_dict = "../../lib/worddict/";
+	char* tag_dict = "../../lib/tagdict/";
+
+	SegPos(seg_dict, tag_dict, input_file, output_file);
+
+	SemiAngleTrans(input_file, output_file);
+
+	GetCode(input_file);
+	
+
+	// testing log
+	LogOutput("hello,world");
+	return 0;
+}
