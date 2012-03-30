@@ -1,0 +1,128 @@
+/**
+ * @file     wordSeg.cpp
+ * @brief    Segment Chinese words.
+ * @details  ...
+ * @author   yinxusen@baidu.com
+ * @date     2012-3-23
+ **/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "scwdef.h"
+#include "isegment.h"
+
+#define FAIL -1
+#define OK 0
+
+#define MAX_LINE_LEN 40960
+#define MAX_TOKEN_SIZE 1024
+
+typedef char* path_t;
+
+char* PROGNAME = "";
+
+extern int scw_get_token_1( scw_out_t* pout, int type, token_t result[], unsigned max);
+
+void scw_dump_out(scw_out_t* pout, char* line, FILE* pOuf) {
+	int i = 0, count = 0;
+	token_t tokens[MAX_TOKEN_SIZE];
+	count = scw_get_token_1(pout,SCW_OUT_WPCOMP,tokens,sizeof(tokens));
+	fprintf(pOuf, "============== Segment Result =============\n");
+	for(i=0; i<count; ++i) {
+		fprintf(pOuf, "%s(%d)\t", tokens[i].buffer, tokens[i].offset);
+	}
+	fprintf(pOuf, "\n");
+	count = scw_get_token_1(pout,SCW_OUT_BASIC,tokens,sizeof(tokens));
+	fprintf(pOuf, "============== Basic word Result =============\n");
+	for(i=0; i<count; ++i) {
+		fprintf(pOuf, "%s(%d)\t", tokens[i].buffer, tokens[i].offset);
+	}
+	fprintf(pOuf, "\n");
+	count = scw_get_token_1(pout,SCW_OUT_SUBPH,tokens,sizeof(tokens));
+	fprintf(pOuf, "============== Sub Phrase Result =============\n");
+	for(i=0; i<count; ++i) {
+		fprintf(pOuf, "%s(%d)\t", tokens[i].buffer, tokens[i].offset);
+	}
+	fprintf(pOuf, "\n");
+	count = scw_get_token_1(pout,SCW_OUT_NEWWORD,tokens,sizeof(tokens));
+	fprintf(pOuf, "============== New Word Result =============\n");
+	for(i=0; i<count; ++i) {
+		fprintf(pOuf, "%s(%d)\t", tokens[i].buffer, tokens[i].offset);
+	}
+	fprintf(pOuf, "\n");
+	count = scw_get_token_1(pout,SCW_OUT_HUMANNAME,tokens,sizeof(tokens));
+	fprintf(pOuf, "============== Human Name Result =============\n");
+	for(i=0; i<count; ++i) {
+		fprintf(pOuf, "%s(%d)\t", tokens[i].buffer, tokens[i].offset);
+	}
+	fprintf(pOuf, "\n");
+	count = scw_get_token_1(pout,SCW_OUT_BOOKNAME,tokens,sizeof(tokens));
+	fprintf(pOuf, "============== Book Name Result =============\n");
+	for(i=0; i<count; ++i) {
+		fprintf(pOuf, "%s(%d)\t", tokens[i].buffer, tokens[i].offset);
+	}
+	fprintf(pOuf, "\n");
+}
+int wordSeg(path_t dictPath, path_t inf, path_t ouf) {
+	scw_worddict_t* pwdict = NULL;
+	scw_out_t* pout = NULL;
+	char line[MAX_LINE_LEN];
+	u_int scwOutFlag;
+	FILE *pInf, *pOuf;
+	scwOutFlag = SCW_OUT_ALL | SCW_OUT_PROP | SCW_OUT_HUMANNAME | SCW_OUT_BOOKNAME;
+	if(inf == NULL || ouf == NULL || strcmp(inf, ouf) == 0) {
+		fprintf(stderr, "\n%s: Input file is NULL or output file is NULL, \
+				or input file name equals output file name, please check.\n", PROGNAME);
+		return FAIL;
+	}
+	if((pInf=fopen(inf,"r")) == NULL) {
+		fprintf(stderr, "\n%s: Open input file failed.\n", PROGNAME);
+		return FAIL;
+	}
+	if((pOuf=fopen(ouf,"w")) == NULL) {
+		fprintf(stderr, "\n%s: Open output file failed.\n", PROGNAME);
+		fclose(pOuf);
+		return FAIL;
+	}
+	if((pwdict = scw_load_worddict(dictPath)) == NULL) {
+		fprintf(stderr, "\n%s: Load word dict failed.\n", PROGNAME);
+		fclose(pInf);
+		fclose(pOuf);
+		return FAIL;
+	}
+	if((pout=scw_create_out(10000, scwOutFlag))==NULL) {
+		fprintf(stderr, "\n%s: Create segment out failed.\n", PROGNAME);
+		scw_destroy_worddict(pwdict);
+		fclose(pInf);
+		fclose(pOuf);
+		return FAIL;
+	}
+	while(fgets(line, sizeof(line), pInf)) {
+		int len = strlen(line);
+		while((line[len-1] == '\r') || (line[len-1] == '\n')) {
+			line[--len] = 0;
+		}
+		if(!len) {
+			continue;
+		}
+		scw_segment_words(pwdict, pout, line, len);
+		scw_dump_out(pout,line,pOuf);
+	}
+	scw_destroy_out(pout);
+	pout = NULL;
+	scw_destroy_worddict(pwdict);
+	pwdict = NULL;
+	fclose(pInf);
+	fclose(pOuf);
+	return OK;
+}
+
+int main(int argc, char** argv) {
+	PROGNAME = argv[0];
+	if(argc < 4) {
+		fprintf(stderr, "\nusage:\t%s codeDictPath inputFile outputFile\n", PROGNAME);
+		exit(FAIL);
+	}
+	return wordSeg(argv[1], argv[2], argv[3]);
+}
