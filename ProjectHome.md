@@ -1,0 +1,1 @@
+For each synonym pair mined from Internet, find the best tag.
